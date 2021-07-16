@@ -4,6 +4,7 @@ import (
 	"fmt"
 	_ "grpc_study/config"
 	pb "grpc_study/proto/hello"
+	"time"
 
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
@@ -55,6 +56,7 @@ func main() {
 		opts = append(opts, grpc.WithInsecure())
 	}
 	opts = append(opts, grpc.WithPerRPCCredentials(new(customCredentials)))
+	opts = append(opts, grpc.WithUnaryInterceptor(interceptor))
 
 	// 连接
 	conn, err := grpc.Dial(Address, opts...)
@@ -68,8 +70,8 @@ func main() {
 	// 初始化客户端
 	c := pb.NewHelloClient(conn)
 	// 调用方法
-	query := &pb.HelloRequest{Name: "yangliang"}
-	res, err := c.SayHello(context.Background(), query)
+	request := &pb.HelloRequest{Name: "yangliang"}
+	res, err := c.SayHello(context.Background(), request)
 
 	if err != nil {
 		grpclog.Fatalln(err)
@@ -77,4 +79,12 @@ func main() {
 	}
 
 	fmt.Println(res.Message)
+}
+
+// interceptor 客户端拦截器
+func interceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	start := time.Now()
+	err := invoker(ctx, method, req, reply, cc, opts...)
+	fmt.Printf("method=%s req=%v rep=%v duration=%s error=%v \n", method, req, reply, time.Since(start), err)
+	return err
 }

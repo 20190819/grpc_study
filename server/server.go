@@ -30,11 +30,44 @@ var (
 	appkey       string
 )
 
+func main() {
+	// tls 认证
+	creds, err := credentials.NewServerTLSFromFile("../keys/server.pem", "../keys/server.key")
+	if err != nil {
+		grpclog.Fatalf("Failed to generate credentials %v", err)
+		return
+	}
+	var opts []grpc.ServerOption
+	opts = append(opts, grpc.Creds(creds))
+	opts = append(opts, grpc.UnaryInterceptor(interceptor))
+
+	// 实例化 grpc Server
+	s := grpc.NewServer(opts...)
+	// 注册服务
+	pb.RegisterHelloServer(s, HelloService)
+	fmt.Printf("Listen on %s with TLS and Token and Interceptor", Address)
+
+	listen, err := net.Listen("tcp", Address)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	// 启动服务
+	s.Serve(listen)
+}
+
 func (helloService) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloResponse, error) {
 
+	resp := new(pb.HelloResponse)
+	resp.Message = fmt.Sprintf("Hello %s \n ", in.Name)
+
+	return resp, nil
+}
+
+func auth(ctx context.Context) error {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil, status.Errorf(codes.Unauthenticated, "无Token认证信息")
+		return status.Errorf(codes.Unauthenticated, "无Token认证信息")
 	}
 	if val, ok := md["appid"]; ok {
 		appid = val[0]
@@ -44,33 +77,15 @@ func (helloService) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.Hell
 	}
 
 	if appid != viper.GetString("appid") || appkey != viper.GetString("appkey") {
-		return nil, status.Errorf(codes.Unauthenticated, "Token认证信息无效: appid=%s, appkey=%s", appid, appkey)
+		return status.Errorf(codes.Unauthenticated, "Token认证信息无效: appid=%s, appkey=%s", appid, appkey)
 	}
-
-	resp := new(pb.HelloResponse)
-	resp.Message = fmt.Sprintf("Hello %s \n ", in.Name)
-
-	return resp, nil
+	return nil
 }
 
-func main() {
-	listen, err := net.Listen("tcp", Address)
+func interceptor(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	err := auth(ctx)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return nil, err
 	}
-
-	// tls 认证
-	creads, err := credentials.NewServerTLSFromFile("../keys/server.pem", "../keys/server.key")
-	if err != nil {
-		grpclog.Fatalf("Failed to generate credentials %v", err)
-		return
-	}
-	// 实例化 grpc Server
-	s := grpc.NewServer(grpc.Creds(creads))
-	// 注册服务
-	pb.RegisterHelloServer(s, HelloService)
-	fmt.Printf("Listen on %s with TLS and Token", Address)
-	// 启动服务
-	s.Serve(listen)
+	return handler(ctx, request)
 }
