@@ -5,6 +5,7 @@ import (
 	"fmt"
 	pb "grpc_study/proto/hello"
 	"net"
+	"net/http"
 
 	"github.com/spf13/viper"
 	"google.golang.org/grpc/codes"
@@ -16,6 +17,8 @@ import (
 	"google.golang.org/grpc"
 
 	_ "grpc_study/config"
+
+	"golang.org/x/net/trace"
 )
 
 var (
@@ -45,13 +48,17 @@ func main() {
 	s := grpc.NewServer(opts...)
 	// 注册服务
 	pb.RegisterHelloServer(s, HelloService)
-	fmt.Printf("Listen on %s with TLS and Token and Interceptor", Address)
+	fmt.Printf("Listen on %s with TLS and Token and Interceptor\n", Address)
 
 	listen, err := net.Listen("tcp", Address)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+
+	// 开启 trance
+	go startTrace()
+
 	// 启动服务
 	s.Serve(listen)
 }
@@ -88,4 +95,12 @@ func interceptor(ctx context.Context, request interface{}, info *grpc.UnaryServe
 		return nil, err
 	}
 	return handler(ctx, request)
+}
+
+func startTrace() {
+	trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
+		return true, true
+	}
+	go http.ListenAndServe(":50051", nil)
+	fmt.Println("Trace listen on 50051")
 }
